@@ -209,7 +209,7 @@ int main( int argc, char * argv[] )
 			
 		} else {
 			// this is parent
-			return 0;
+			return pid;
 		}
 		
 		// Write own pidfile
