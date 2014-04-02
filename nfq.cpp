@@ -1,4 +1,3 @@
-//#define __USE_BSD
 #include "sender.h"
 #include <getopt.h>
 #include <iostream>
@@ -13,20 +12,19 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <string.h>
-//#define __FAVOR_BSD
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <linux/netfilter.h>
 #include <unordered_map>
-#include <pthread.h>		// for threading
+#include <pthread.h>
 #include <boost/regex.hpp>
 #include <boost/program_options.hpp>
 #include <time.h>
 #include <sys/stat.h>
 #include <stdarg.h>
 #include <libnetfilter_queue/libnetfilter_queue.h>
-#include "parser.h"		// HTTP parser functions
+#include "parser.h"
 
 #define NF_IP_PRE_ROUTING   0
 #define NF_IP_LOCAL_IN 1
@@ -93,9 +91,7 @@ unsigned short int queuenum;
 int main( int argc, char * argv[] )
 {
 	filtered = 0;
-	// http://monoutil.googlecode.com/svn-history/r24/trunk/packet_engine.c
 	int ret = 0;
-//	unsigned short int queuenum = 0;		// queue number to read
 	daemonized = 0;
 	std::string config_file("/etc/nfq_filter.cfg");
 	
@@ -125,8 +121,6 @@ int main( int argc, char * argv[] )
 		{"version",	0,	0,	'v'},
 		{"help",	0,	0,	'h'},
 		{"daemonize",	0,	0,	'd'},
-//		{"logfile",	1,	0,	'l'},
-//		{"queue",	1,	0,	'q'},
 		{0,0,0,0},
 	};
 	
@@ -145,17 +139,6 @@ int main( int argc, char * argv[] )
 			case 'h':
 				print_options();
 				exit(-1);
-//			case 'q':
-//				if( optarg ) {
-//					queuenum = (unsigned short int)atoi(optarg);
-//				}
-//				break;
-//			case 'l':
-//				logfilename = optarg;
-//				break;
-//			case 'D':
-//				daemonized = 1;
-//				break;
 			case 'v':
 				fprintf(stderr, "%s ver. %s\n", PROG_NAME, PROG_VER);
 				exit(-1);
@@ -177,7 +160,6 @@ int main( int argc, char * argv[] )
 	writelog( "%s", tmp );
 	
 	// Initialization;
-	// Reading domain list:
 	read_domains();
 	read_urls();
 	fprintf(stderr, "\nURLs and Domains files reading done.\n");
@@ -209,7 +191,6 @@ int main( int argc, char * argv[] )
 	}
 	
 	pthread_exit(NULL);
-//	fprintf(stderr, "\nqnum: %d\n", queuenum );
 }
 
 void read_config( std::string file )
@@ -217,14 +198,11 @@ void read_config( std::string file )
 	po::options_description config;
 	po::variables_map vm;
 	
-//	printf("Reading config file: %s...\n", file.c_str() );
-	
 	std::ifstream cfile(file.c_str());
 	if( !cfile ) {
 		printf("Can't read config: '%s'\n", file.c_str() );
 		exit( -1 );
 	}
-//	unsigned short int q_num;
 	config.add_options()
 		("queue", po::value<unsigned short int>(&queuenum)->default_value(0), "Queue number")
 		("logfile", po::value<std::string>(&logfilename)->default_value(logfilename.c_str()), "Log filename")
@@ -245,13 +223,11 @@ void read_config( std::string file )
 	return;
 }
 
-//void read_domains( std::unordered_map<std::string, int> d )
 void read_domains()
 {
 	// reading domain names file 'domains.txt'
 	ifstream dfile;
 	string dline;
-//	dfile.open("domains.txt");
 	dfile.open( domains_file );
 	if( !dfile )
 	{
@@ -267,27 +243,13 @@ void read_domains()
 		}
 	}
 	
-	// print out domains:
-//	for( std::unordered_map<std::string, int>::iterator it = d.begin(); it != d.end(); ++it ) {
-//		std::cout << " [" << it->first << ", " << it->second << "]";
-//		std::cout << endl;
-//	}
-//
-//	if( d.find( string("zebradudka.com") ) != d.end() ) {
-//		fprintf(stderr, "\nDomain found!\n");
-//	} else {
-//		fprintf(stderr, "\nDomaint NOT found!\n");
-//	}
-	
 	return;
 }
 
 void read_urls()
 {
-	// reading urls file 'urls.txt'
 	ifstream ufile;
 	string uline;
-//	ufile.open("urls.txt");
 	ufile.open( urls_file );
 	if( !ufile )
 	{
@@ -305,12 +267,6 @@ void read_urls()
 			urls[hash] = uline;
 		}
 	}
-	
-	// print out
-//	for( std::unordered_map<unsigned long, std::string>::iterator it = urls.begin(); it != urls.end(); ++it ) {
-//		std::cout << " [" << it->first << ", " << it->second << "] " << endl;
-//	}
-	
 	return;
 }
 
@@ -320,8 +276,6 @@ void print_options(void)
 	printf("\n\nSyntax: nfq <-c config_file> [ -h ] [ -d ]\n\n");
 	printf("  -c\t\t- specify config file to read\n");
 	printf("  -h\t\t- displays this help and exit.\n");
-//	printf("  -q <0-65535>\t- listen to the NFQUEUE (as specified in --queue-num with iptables)\n");
-//	printf("  -l <logfile>\t- specify an alternative log file\n");
 	printf("  -d\t\t- run this program as daemon\n\n");
 }
 
@@ -373,9 +327,6 @@ void writelog( const char *fmt, ... ) {
 
         fprintf( f_log, "\n%s:\n", b );         // datetime
 
-//        if( daemonized == 0 )
-        printf( "\n%s:\n", b );
-
         va_list arg;
         va_start( arg, fmt );
 		vfprintf( f_log, fmt, arg );
@@ -383,6 +334,7 @@ void writelog( const char *fmt, ... ) {
 
         if( daemonized == 0 ) {
 		va_start( arg, fmt );
+		printf( "\n%s:\n", b );
 		vprintf( fmt, arg );
 		va_end(arg);
         }
@@ -468,7 +420,6 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 		int len=0;
 		
 		id = ntohl( ph->packet_id );
-//		printf("hw_protocol: 0x%04x hook = %u id = %u \n", ntohs(ph->hw_protocol), ph->hook, id);
 		size = nfq_get_payload(nfa, (unsigned char **)&full_packet);
 		len = nfq_get_payload(nfa, &data);
 		int id_protocol = full_packet[9];	// identify ip protocol
@@ -483,16 +434,11 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 			return(0);
 		}
 		
-//		printf("\n----------------------------\n");
 		// Process only TCP proto:
 		if( id_protocol == IPPROTO_TCP ) {
 			char src_ip[32], dst_ip[32];
 			strcpy( src_ip, get_src_ip_str(full_packet) );
 			strcpy( dst_ip, get_dst_ip_str(full_packet) );
-			
-//				printf("Packet (size: %d) captured: %s:%d -> %s:%d\n", size, get_src_ip_str(full_packet), get_tcp_src_port(full_packet), get_dst_ip_str(full_packet), get_tcp_dst_port(full_packet) );
-//				printf("Packet (size: %d) captured: %s:%d -> %s:%d\n", size, src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet) );
-//				printf("Headers: IP: %d, TCP:%d, FULL: %d; total: %d\n", iphlen, tcphlen, hlen, len);
 			
 			// parce tcp header:
 			struct tcphdr* tcph;
@@ -507,13 +453,10 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 				ntohl(tcph->seq), ntohl(tcph->ack_seq),
 				ntohs(tcph->window), 4*tcph->doff);
 			
-			///////
 			char result[4096] = {0};
-			//printData( (unsigned char*)full_packet + sizeof(struct ip) + (4*tcph->doff), size - (tcph->doff*4) - sizeof(struct ip) );
 			getData( (unsigned char*)full_packet + sizeof(struct ip) + (4*tcph->doff), size - (tcph->doff*4) - sizeof(struct ip), result );
 			std::string res = result;
 			
-//			if( debug == 3 ) {
 			if( debug > 0 ) {
 				// Print all packets shortly
 				sprintf( tmp, "Packet (size %d): %s:%d -> %s:%d\nHeader:%s", size, src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
@@ -523,20 +466,6 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 				sprintf( tmp, "Packet (size %d): %s:%d -> %s:%d\nHeader:%sPacket:\n%s", size, src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr, res.c_str() );
 			}
 			
-//			http_request r;
-//			if( parse_http( res, &r ) ) {
-//				printf("\nPacket parsed successful:\nMethod:\t\t'%s'\tHost:\t'%s'\nFull URL:\t\t'%s'\n", r.method.c_str(), r.host.c_str(), r.full_url.c_str());
-//			}
-			
-			// if not parsed -> accept
-//			nfq_set_verdict( qh, id, NF_ACCEPT, 0, NULL);
-//			return(1);
-			
-			// Search GET in this result
-//			boost::regex regEx("^(?:[\\s\\t]?+)(GET|HEAD|TRACE|POST|OPTIONS)(?:[\\s]+)(.*)(?:[\\s]+)HTTP/1.(?:0|1)(?:[\\s]+)\n(?:.*?)Host:(?:[\\s]+)((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]).)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]*[A-Za-z0-9])|(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]).){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))(?:[\\s]+)\n(?:.*?)");
-//			boost::regex regEx("^(?:[\\s\\t]?+)(GET|HEAD|TRACE|POST|OPTIONS)(?:[\\s]+)(.*)(?:[\\s]+)HTTP/1.(?:0|1)(?:\\s*)?\n(?:.*)?Host:(?:[\\s]+)((([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]).)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]*[A-Za-z0-9])|(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]).){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))(?:\\s*)?\n(?:.*?)\n");
-//			boost::smatch matches;
-			
 			http_request r;
 			if( !parse_http( res, &r ) ) {
 				if( debug > 2 ) {
@@ -545,7 +474,6 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 				nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
 				return(0);
 			}  else {
-				//printf("Match: %s | %s | %s | \n", matches[1].str().c_str(), matches[2].str().c_str(), matches[3].str().c_str() );
 				string host = r.host;
 				string url = r.full_url;
 				string method = r.method;
@@ -567,14 +495,12 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 					nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
 					return(0);
 				} else {
-//					printf("Domain not found (%s). Checking URL.\n", host.c_str());
 						if( debug > 0 ) {
 							sprintf( tmp, "%s\nFull url: %s\n", tmp, full_url.c_str());
 						}
 						// Get hash of this url
 						unsigned long url_hash = djb2( (unsigned char*)full_url.c_str() );
 						if( urls.find( url_hash ) != urls.end() ) {
-//							printf("URL match (hash: %lu, url: %s), blocking!\n", url_hash, full_url.c_str() );
 							if( debug > 0 )
 							{
 								writelog("%s", "%sURL match! hash: %lu, url: %s, blocking!\n", tmp, url_hash, full_url.c_str() );
@@ -586,7 +512,6 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 							filtered++;
 							nfq_set_verdict( qh, id, NF_DROP, 0, NULL);
 						}
-//					}
 				}
 			}
 		}
