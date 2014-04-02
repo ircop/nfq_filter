@@ -70,7 +70,6 @@ unsigned long djb2( unsigned char *str );
 void read_mem( statm_t &result );
 
 void getData( unsigned char* data, int size, char *result );
-void printData( unsigned char* data, int size );
 
 // global vars:
 std::string domains_file = "/etc/nfq/domains";
@@ -307,7 +306,7 @@ void *twrite_log_function( void *)
 	char buf[128];
 	
 	while(1){
-		sleep(3);
+		sleep(120);
 		read_mem(mem);
 		writelog( "\n--- stats ---\nFiltered: %lu\nCaptured: %lu\nMemory: %ld\n\n", filtered, captured, mem.size);
 	}
@@ -458,20 +457,8 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 			getData( (unsigned char*)full_packet + sizeof(struct ip) + (4*tcph->doff), size - (tcph->doff*4) - sizeof(struct ip), result );
 			std::string res = result;
 			
-//			if( debug > 0 ) {
-//				// Print all packets shortly
-//				sprintf( tmp, "Packet (size %d): %s:%d -> %s:%d\nHeader:%s", size, src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
-//			}
-//			if( debug == 4 || debug == 2) {
-//				// Print all packets full info
-//				sprintf( tmp, "Packet (size %d): %s:%d -> %s:%d\nHeader:%sPacket:\n%s", size, src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr, res.c_str() );
-//			}
-			
 			http_request r;
 			if( !parse_http( res, &r ) ) {
-//				if( debug > 2 ) {
-//					writelog( "%s", tmp );
-//				}
 				nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
 				return(0);
 			}  else {
@@ -480,13 +467,12 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 				string method = r.method;
 				string full_url = r.full_url;
 				
-//				sprintf(tmp, "%sMethod: '%s', Host: '%s',URL: '%s'\n", tmp, method.c_str(), host.c_str(), url.c_str() );
-				
 				// Check in domain list
 				if( domains.find( host ) != domains.end() ) {
-//					if( debug > 0 ) {
-//						writelog("Domain found! Blocking.\n%s", tmp, "Domain found! Blocking.\n");
-//					}
+					if( debug > 0 )
+						writelog(" - Packet filtered by DOMAIN: %s :: %s:%d -> %s:%d :: Header: %s", host.c_str(), src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
+					if( debug == 2 || debug == 4 )
+						writelog("Full packet:\n%s", res.c_str() );
 					
 					Sender->Redirect( get_tcp_src_port(full_packet), get_tcp_dst_port(full_packet),
 						 /*user ip*/src_ip, dst_ip,
@@ -496,16 +482,13 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 					nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
 					return(0);
 				} else {
-//						if( debug > 0 ) {
-//							sprintf( tmp, "%s\nFull url: %s\n", tmp, full_url.c_str());
-//						}
 						// Get hash of this url
 						unsigned long url_hash = djb2( (unsigned char*)full_url.c_str() );
 						if( urls.find( url_hash ) != urls.end() ) {
-//							if( debug > 0 )
-//							{
-//								writelog("%s", "%sURL match! hash: %lu, url: %s, blocking!\n", tmp, url_hash, full_url.c_str() );
-//							}
+							if( debug > 0 )
+								writelog(" - Packet filtered by URL: %s :: %s:%d -> %s:%d :: Header: %s", full_url.c_str(), src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
+							if( debug == 2 || debug == 4 )
+								writelog("Full packet:\n%s", res.c_str() );
 							
 							Sender->Redirect( get_tcp_src_port(full_packet), get_tcp_dst_port(full_packet),
 									src_ip, dst_ip, tcph->ack_seq, tcph->seq,
@@ -514,11 +497,14 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 							nfq_set_verdict( qh, id, NF_DROP, 0, NULL);
 						}
 				}
+				
+				// HTTP parsed, but packet not filtered:
+				if( debug == 3 || debug == 4 )
+					writelog("Packet NOT filtered: %s:%d -> %s:%d,\tHeader: %s", src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
+				if( debug == 4 )
+					writelog("Full packet:\n%s", res.c_str() );
 			}
 		}
-//		if( debug == 3 || debug == 4 ) {
-//			writelog( "%s", tmp );
-//		}
 		// let the packet continue. NF_ACCEPT will pass the packet.
 		nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
 		return(0);
@@ -563,16 +549,6 @@ void getData( unsigned char* data, int size, char *result )
 	{
 		sprintf( result, "%s%c", result, data[i]) ;
 	}
-	return;
-}
-
-void printData( unsigned char* data, int size )
-{
-	for (u_int i=0; (i < size) ; i++)
-	{
-		printf("%c", data[i]);
-	}
-	printf("\n");
 	return;
 }
 
