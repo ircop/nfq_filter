@@ -4,7 +4,7 @@ std::vector<std::string> explode( std::string delim, std::string source );
 
 bool parse_http( std::string pdata, http_request *req )
 {
-	printf("--------\nparse_http call with packet:\n%s\n-----------\n", pdata.c_str() );
+//	printf("--------\nparse_http call with packet:\n%s\n-----------\n", pdata.c_str() );
 	
 	std::string method, path, host, full_url, data;
 	int http=1;

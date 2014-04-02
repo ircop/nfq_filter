@@ -24,6 +24,7 @@
 #include <boost/program_options.hpp>
 #include <time.h>
 #include <sys/stat.h>
+#include <stdarg.h>
 #include <libnetfilter_queue/libnetfilter_queue.h>
 #include "parser.h"		// HTTP parser functions
 
@@ -60,7 +61,7 @@ void read_urls();	// reading urls file
 inline std::string trim( std::string& str );
 void *tcap_packet_function( void *threadarh );
 void *twrite_log_function( void *);
-void writelog( string filename, char *toprint );
+void writelog( const char *fmt, ... );
 short int netlink_loop(unsigned short int queuenum);
 static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data);
 char *get_src_ip_str( char *payload );
@@ -83,6 +84,8 @@ std::unordered_map<unsigned long, std::string> urls;
 long int filtered, captured;
 char tmp[4096];
 CSender *Sender;
+FILE *f_log;
+int daemonized;
 
 int debug = 1;
 unsigned short int queuenum;
@@ -93,7 +96,7 @@ int main( int argc, char * argv[] )
 	// http://monoutil.googlecode.com/svn-history/r24/trunk/packet_engine.c
 	int ret = 0;
 //	unsigned short int queuenum = 0;		// queue number to read
-	int daemonized = 0;
+	daemonized = 0;
 	std::string config_file("/etc/nfq_filter.cfg");
 	
 	// check input params
@@ -164,8 +167,14 @@ int main( int argc, char * argv[] )
 	
 	read_config( config_file );
 	sprintf( tmp, "--------------------------\nStarting program.\n\nQueue:\t\t%i\nLog file:\t%s\nDebug:\t\t%i\n", queuenum, logfilename.c_str(), debug ) ;
-	printf( "%s", tmp );
-	writelog( logfilename, tmp );
+	
+	f_log = fopen(logfilename.c_str(), "a");
+	if( f_log == NULL ) {
+		printf("%s\n", "Can't open logfile!\n");
+		exit(-1);
+	}
+	
+	writelog( "%s", tmp );
 	
 	// Initialization;
 	// Reading domain list:
@@ -196,8 +205,7 @@ int main( int argc, char * argv[] )
 		sleep(100);
 		
 		read_mem(mem);
-		sprintf(buf, "Parent memory usage:\n%ld\n", mem.size );
-		writelog(logfilename, buf);
+		writelog( "%s", "Parent memory usage:\n%ld\n", mem.size );
 	}
 	
 	pthread_exit(NULL);
@@ -346,37 +354,40 @@ void *twrite_log_function( void *)
 	while(1){
 		sleep(100);
 		read_mem(mem);
-		sprintf(buf, "%sFiltered: %lu\nCaptured: %lu\nMemory: %ld\n\n", "\n---- stats ----\n", filtered, captured, mem.size);
-		writelog(logfilename, buf);
-		/*
-		read_mem(mem);
-		sprintf(buf, "Self memory usage:\n%ld\n", mem.size );
-		writelog(logfilename, buf);
-		*/
+		writelog( "%s", "%sFiltered: %lu\nCaptured: %lu\nMemory: %ld\n\n", "\n---- stats ----\n", filtered, captured, mem.size);
 	}
 	pthread_exit(NULL);
 }
-void writelog( string filename, char *toprint ) {
-	FILE *fd = fopen(filename.c_str(), "a");
-	if( fd == NULL ) {
-		printf("Unable to open log file.\n");
-		exit(-1);
-	}
-	
-	time_t now = time(0);
-	struct tm tstruct;
-	char b[80];
-	tstruct = *localtime(&now);
-	strftime(b, sizeof(b), "%d.%m.%Y %X", &tstruct );
-	
-	fprintf( fd, "\n%s:\n", b );
-	fprintf( fd, "%s", toprint );
-	
-	printf( "%s", toprint );
-	
-//	print_values(fd);
-	fflush(stdout);
-	fclose(fd);
+
+void writelog( const char *fmt, ... ) {
+        if( f_log == NULL ) {
+                printf("Log file is not opened! Exiting.\n");
+                exit(-1);
+        }
+
+        time_t now = time(0);
+        struct tm tstruct;
+        char b[80];
+        tstruct = *localtime(&now);
+        strftime(b, sizeof(b), "%d.%m.%Y %X", &tstruct );
+
+        fprintf( f_log, "\n%s:\n", b );         // datetime
+
+//        if( daemonized == 0 )
+        printf( "\n%s:\n", b );
+
+        va_list arg;
+        va_start( arg, fmt );
+		vfprintf( f_log, fmt, arg );
+        va_end(arg);
+
+        if( daemonized == 0 ) {
+		va_start( arg, fmt );
+		vprintf( fmt, arg );
+		va_end(arg);
+        }
+
+        fflush( f_log );
 }
 
 short int netlink_loop(unsigned short int queuenum)
@@ -444,13 +455,6 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 {
 	struct nfqnl_msg_packet_hdr *ph;
 	ph = nfq_get_msg_packet_hdr(nfa);
-
-//	statm_t mem;
-//	char bf[128];
-//	read_mem(mem);
-//	sprintf(bf, "Thread memory usage:\n%ld\n", mem.size );
-//	writelog(logfilename, bf);
-
 	
 	// Process packet only if it's prerouting:
 	if( ph && ph->hook == NF_IP_PRE_ROUTING ) {
@@ -536,7 +540,7 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 			http_request r;
 			if( !parse_http( res, &r ) ) {
 				if( debug > 2 ) {
-					writelog( logfilename, tmp );
+					writelog( "%s", tmp );
 				}
 				nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
 				return(0);
@@ -552,8 +556,7 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 				// Check in domain list
 				if( domains.find( host ) != domains.end() ) {
 					if( debug > 0 ) {
-						sprintf(tmp, "%s%s", tmp, "Domain found! Blocking.\n");
-						writelog(logfilename, tmp);
+						writelog("Domain found! Blocking.\n%s", tmp, "Domain found! Blocking.\n");
 					}
 					
 					Sender->Redirect( get_tcp_src_port(full_packet), get_tcp_dst_port(full_packet),
@@ -574,8 +577,7 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 //							printf("URL match (hash: %lu, url: %s), blocking!\n", url_hash, full_url.c_str() );
 							if( debug > 0 )
 							{
-								sprintf( tmp, "%sURL match! hash: %lu, url: %s, blocking!\n", tmp, url_hash, full_url.c_str() );
-								writelog( logfilename, tmp );
+								writelog("%s", "%sURL match! hash: %lu, url: %s, blocking!\n", tmp, url_hash, full_url.c_str() );
 							}
 							
 							Sender->Redirect( get_tcp_src_port(full_packet), get_tcp_dst_port(full_packet),
@@ -589,7 +591,7 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 			}
 		}
 		if( debug == 3 || debug == 4 ) {
-			writelog( logfilename, tmp );
+			writelog( "%s", tmp );
 		}
 		// let the packet continue. NF_ACCEPT will pass the packet.
 		nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
@@ -667,7 +669,7 @@ void read_mem(statm_t &result )
 	
 	FILE *f = fopen( statm_path, "r" );
 	if( !f ) {
-		writelog( logfilename, (char *)"Cant open /proc/self/statm!\n");
+		writelog( "%s", (char *)"Cant open /proc/self/statm!\n");
 		exit(-1);
 	}
 	
