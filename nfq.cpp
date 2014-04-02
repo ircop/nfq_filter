@@ -76,12 +76,17 @@ std::string domains_file = "/etc/nfq/domains";
 std::string urls_file = "/etc/nfq/urls";
 std::string logfilename = "/tmp/nfq_filter.log";
 std::string redirect_url = "http://google.com";
+std::string debug_from_ip = "";
+std::string debug_ip_file = "";
+std::string pidfile = "";
+int debug_ip = 0;
 std::unordered_map<std::string, int> domains;
 std::unordered_map<unsigned long, std::string> urls;
 long int filtered, captured;
 char tmp[4096];
 CSender *Sender;
 FILE *f_log;
+FILE *f_debug_ip;
 int daemonized;
 
 int debug = 1;
@@ -141,6 +146,9 @@ int main( int argc, char * argv[] )
 			case 'v':
 				fprintf(stderr, "%s ver. %s\n", PROG_NAME, PROG_VER);
 				exit(-1);
+			case 'd':
+				daemonized = 1;
+				break;
 			case '?':
 				fprintf(stderr, "\nInvalid option or missing parameter, use `nfq -h` for hepl.\n\n");
 				exit(-1);
@@ -148,20 +156,72 @@ int main( int argc, char * argv[] )
 	}
 	
 	read_config( config_file );
-	sprintf( tmp, "--------------------------\nStarting program.\n\nQueue:\t\t%i\nLog file:\t%s\nDebug:\t\t%i\n", queuenum, logfilename.c_str(), debug ) ;
+	sprintf( tmp, "\n--------------------------\nStarting program.\n\nQueue:\t\t%i\nLog file:\t%s\nDebug:\t\t%i\n", queuenum, logfilename.c_str(), debug ) ;
 	
 	f_log = fopen(logfilename.c_str(), "a");
 	if( f_log == NULL ) {
 		printf("%s\n", "Can't open logfile!\n");
 		exit(-1);
 	}
+	if( pidfile == "" ) {
+		printf("Can't read pid file from config!");
+		exit(-1);
+	}
 	
+	// Debug single ip?
+	if( debug_from_ip != "" && debug_ip_file != "" ) {
+		debug_ip = 1;
+		f_debug_ip = fopen( debug_ip_file.c_str(), "a" );
+		if( f_debug_ip == NULL ) {
+			printf("%s\n", "Can't open debug single ip file!\n");
+			exit(-1);
+		}
+		setlinebuf(f_debug_ip);
+		fprintf( f_debug_ip, "%s", "Debug ip started...");
+	}
+	
+	if( daemonized == 1 )
+		printf( "%s", tmp );
 	writelog( "%s", tmp );
 	
 	// Initialization;
 	read_domains();
 	read_urls();
 	fprintf(stderr, "\nURLs and Domains files reading done.\n");
+	
+	// Daemonizing ( if needed )
+	if( daemonized == 1 ) {
+		printf("%s", "Daemonizing...\n");
+		int pid = fork();
+		if( pid == -1 )
+		{
+			printf("Error: daemonizing failed! (%s)\n", strerror(errno));
+			return(-1);
+		} else if (!pid) {
+			// This is already child
+			printf("Daemonized.\n");
+			umask(0);
+			setsid();
+			chdir("/");
+			close(STDIN_FILENO);
+			close(STDOUT_FILENO);
+			close(STDERR_FILENO);
+			
+		} else {
+			// this is parent
+			return 0;
+		}
+		
+		// Write own pidfile
+		FILE *fpid = fopen( pidfile.c_str(), "w+");
+		if( fpid ) {
+			fprintf(fpid, "%u", getpid());
+			fclose(fpid);
+		} else {
+			writelog("%s", "Can't open pidfile! Exiting.\n");
+			exit(-1);
+		}
+	}
 	
 	Sender = new CSender( debug, redirect_url );
 	
@@ -186,8 +246,12 @@ int main( int argc, char * argv[] )
 		sleep(100);
 		
 		read_mem(mem);
-		writelog( "%s", "Parent memory usage:\n%ld\n", mem.size );
+		writelog( "Parent memory usage:\t%ld\n", mem.size );
 	}
+	
+	fclose( f_log );
+	if( debug_ip == 1 )
+		fclose( f_debug_ip );
 	
 	pthread_exit(NULL);
 }
@@ -208,12 +272,17 @@ void read_config( std::string file )
 		("debug", po::value<int>(&debug)->default_value(debug), "Debugging output")
 		("domainlist", po::value<std::string>(&domains_file)->default_value("/etc/nfq/domains"), "Domain list file")
 		("urllist", po::value<std::string>(&urls_file)->default_value("/etc/nfq/urls"), "Url list file")
-		("redirect_url", po::value<std::string>(&redirect_url)->default_value("http://google.com"), "URL for redirects");
+		("redirect_url", po::value<std::string>(&redirect_url)->default_value("http://google.com"), "URL for redirects")
+		("debug_from_ip", po::value<std::string>(&debug_from_ip)->default_value(""), "Single IP-Address debug")
+		("debug_ip_file", po::value<std::string>(&debug_ip_file)->default_value(""), "Debug single IP to file")
+		("pidfile", po::value<std::string>(&pidfile)->default_value(""), "pid-file descriptor");
 	
 	vm = po::variables_map();
 	po::store( po::parse_config_file( cfile, config ), vm );
 	cfile.close();
 	po::notify(vm);
+	
+
 	
 	if( debug < 0 || debug > 4 ) {
 		debug = 1;
@@ -325,7 +394,7 @@ void writelog( const char *fmt, ... ) {
         tstruct = *localtime(&now);
         strftime(b, sizeof(b), "%d.%m.%Y %X", &tstruct );
 
-        fprintf( f_log, "\n%s:\n", b );         // datetime
+        fprintf( f_log, "%s:\t", b );         // datetime
 
         va_list arg;
         va_start( arg, fmt );
@@ -334,7 +403,7 @@ void writelog( const char *fmt, ... ) {
 
         if( daemonized == 0 ) {
 		va_start( arg, fmt );
-		printf( "\n%s:\n", b );
+		printf( "%s:", b );
 		vprintf( fmt, arg );
 		va_end(arg);
         }
@@ -459,6 +528,10 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 			
 			http_request r;
 			if( !parse_http( res, &r ) ) {
+				if( debug_ip == 1 && debug_from_ip == src_ip ) {
+					fprintf( f_debug_ip, " - Packet captured: %s:%d -> %s:%d :: Header: %s", src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
+					fprintf( f_debug_ip, "%s\nFull packet:\n%s", "parse_http() failed.", res.c_str() );
+				}
 				nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
 				return(0);
 			}  else {
@@ -470,9 +543,14 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 				// Check in domain list
 				if( domains.find( host ) != domains.end() ) {
 					if( debug > 0 )
-						writelog(" - Packet filtered by DOMAIN: %s :: %s:%d -> %s:%d :: Header: %s", host.c_str(), src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
+						writelog(" - Packet filtered by DOMAIN: %s (%s) :: %s:%d -> %s:%d :: Header: %s", host.c_str(), full_url.c_str(), src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
 					if( debug == 2 || debug == 4 )
 						writelog("Full packet:\n%s", res.c_str() );
+					
+					if( debug_ip == 1 && debug_from_ip == src_ip ) {
+						fprintf( f_debug_ip, " - Packet filtered by DOMAIN: %s (%s) :: %s:%d -> %s:%d :: Header: %s", host.c_str(), full_url.c_str(), src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
+						fprintf( f_debug_ip, "Full packet:\n%s", res.c_str() );
+					}
 					
 					Sender->Redirect( get_tcp_src_port(full_packet), get_tcp_dst_port(full_packet),
 						 /*user ip*/src_ip, dst_ip,
@@ -490,17 +568,27 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 							if( debug == 2 || debug == 4 )
 								writelog("Full packet:\n%s", res.c_str() );
 							
+							if( debug_ip == 1 && debug_from_ip == src_ip ) {
+								fprintf(f_debug_ip, " - Packet filtered by URL: %s :: %s:%d -> %s:%d :: Header: %s", full_url.c_str(), src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
+								fprintf(f_debug_ip, "Full packet:\n%s", res.c_str() );
+							}
+							
 							Sender->Redirect( get_tcp_src_port(full_packet), get_tcp_dst_port(full_packet),
 									src_ip, dst_ip, tcph->ack_seq, tcph->seq,
 									(tcph->psh ? 1 : 0 ) );
 							filtered++;
 							nfq_set_verdict( qh, id, NF_DROP, 0, NULL);
+							return(0);
 						}
+				}
+				
+				if( debug_ip == 1 && debug_from_ip == src_ip ) {
+					fprintf(f_debug_ip, "Packet NOT filtered: %s:%d -> %s:%d,\tHeader: %sHost: %s :: URL: %s\nFull packet:\n%s", src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr, host.c_str(), full_url.c_str(), res.c_str() );
 				}
 				
 				// HTTP parsed, but packet not filtered:
 				if( debug == 3 || debug == 4 )
-					writelog("Packet NOT filtered: %s:%d -> %s:%d,\tHeader: %s", src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
+					writelog("Packet NOT filtered: %s:%d -> %s:%d,\tHeader: %s\nHost: %s :: URL: %s\n", src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr, host.c_str(), full_url.c_str() );
 				if( debug == 4 )
 					writelog("Full packet:\n%s", res.c_str() );
 			}
