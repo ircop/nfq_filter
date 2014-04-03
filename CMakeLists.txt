@@ -1,14 +1,11 @@
 cmake_minimum_required(VERSION 2.8)
 project(nfq_filter)
 
-#include(CXX11.cmake)
-#check_for_cxx11_compiler(CXX11_COMPILER)
-#if(CXX11_COMPILER)
-#        enable_cxx11()
-#endif()
-ADD_DEFINITIONS(
-	-std=c++11
-)
+include(CXX11.cmake)
+check_for_cxx11_compiler(CXX11_COMPILER)
+if(CXX11_COMPILER)
+        enable_cxx11()
+endif()
 
 set(BOOST_COMPONENTS program_options)
 find_package(Boost COMPONENTS ${BOOST_COMPONENTS} REQUIRED)
