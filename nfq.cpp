@@ -17,9 +17,11 @@
 #include <errno.h>
 #include <linux/netfilter.h>
 #include <unordered_map>
+#include <mutex>
 #include <pthread.h>
 #include <boost/regex.hpp>
 #include <boost/program_options.hpp>
+#include <mutex>
 #include <time.h>
 #include <sys/stat.h>
 #include <stdarg.h>
@@ -59,6 +61,7 @@ void read_urls();	// reading urls file
 inline std::string trim( std::string& str );
 void *tcap_packet_function( void *threadarh );
 void *twrite_log_function( void *);
+void *tread_conf_function( void *);
 void writelog( const char *fmt, ... );
 short int netlink_loop(unsigned short int queuenum);
 static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data);
@@ -82,6 +85,7 @@ std::string pidfile = "";
 int debug_ip = 0;
 std::unordered_map<std::string, int> domains;
 std::unordered_map<unsigned long, std::string> urls;
+std::mutex Mutex;
 long int filtered, captured;
 char tmp[4096];
 CSender *Sender;
@@ -226,15 +230,23 @@ int main( int argc, char * argv[] )
 	Sender = new CSender( debug, redirect_url );
 	
 	// Starting threads
-	pthread_t tcap_packet, twrite_log;
+	pthread_t tcap_packet, twrite_log, tread_conf;
+	// Main thread
 	ret = pthread_create(&tcap_packet, NULL, tcap_packet_function, (void *) &queuenum);
 	if( ret ) {
 		printf("- ERROR(1): return code from pthread_create: %d\n", ret);
 		exit(-1);
 	}
+	// Log statistics thread
 	ret = pthread_create(&twrite_log, NULL, twrite_log_function, (void *)NULL);
 	if( ret ) {
 		printf("- ERROR(2): return code from pthread_create: %d\n", ret);
+		exit(-1);
+	}
+	// Reread config files
+	ret = pthread_create( &tread_conf, NULL, tread_conf_function, (void *)NULL);
+	if( ret ) {
+		printf(" ERROR(3): return code from pthread_create: %d\n", ret);
 		exit(-1);
 	}
 	
@@ -366,6 +378,26 @@ void *tcap_packet_function( void *threadarg )
 	netlink_loop(*(unsigned short int *) threadarg);
 	pthread_exit(NULL);
 }
+
+void *tread_conf_function( void *)
+{
+	printf("Thread: read config files...started\n");
+	
+	while( 1 ) {
+//		sleep(1);
+		sleep(1800);	// 30 mins.
+		writelog("%s", " - Re-reading domains and urls files.");
+		Mutex.lock();
+			urls.clear();
+			domains.clear();
+			read_domains();
+			read_urls();
+		Mutex.unlock();
+	}
+	pthread_exit(NULL);
+}
+
+
 
 void *twrite_log_function( void *)
 {
@@ -540,8 +572,10 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 				string method = r.method;
 				string full_url = r.full_url;
 				
+				Mutex.lock();
 				// Check in domain list
 				if( domains.find( host ) != domains.end() ) {
+					Mutex.unlock();
 					if( debug > 0 )
 						writelog(" - Packet filtered by DOMAIN: %s (%s) :: %s:%d -> %s:%d :: Header: %s", host.c_str(), full_url.c_str(), src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
 					if( debug == 2 || debug == 4 )
@@ -563,6 +597,7 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 						// Get hash of this url
 						unsigned long url_hash = djb2( (unsigned char*)full_url.c_str() );
 						if( urls.find( url_hash ) != urls.end() ) {
+							Mutex.unlock();
 							if( debug > 0 )
 								writelog(" - Packet filtered by URL: %s :: %s:%d -> %s:%d :: Header: %s", full_url.c_str(), src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
 							if( debug == 2 || debug == 4 )
@@ -580,6 +615,7 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 							nfq_set_verdict( qh, id, NF_DROP, 0, NULL);
 							return(0);
 						}
+					Mutex.unlock();
 				}
 				
 				if( debug_ip == 1 && debug_from_ip == src_ip ) {
