@@ -3,7 +3,7 @@
 #include <string>
 #include <sstream>
 #include <algorithm>
-#include <boost/regex.hpp>
+//#include <boost/regex.hpp>
 
 typedef struct {
 	std::string host, method, full_url;
