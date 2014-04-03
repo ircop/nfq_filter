@@ -53,7 +53,9 @@ bool parse_http( std::string pdata, http_request *req )
 //	printf("%s","Got method and http version.\n");
 	
 	// loop trough all other lines
-	for( std::string& str : strings ) {
+//	for( std::string& str : strings ) {
+	for( std::vector<std::string>::iterator it = strings.begin(); it != strings.end(); ++it ) {
+		std::string str = *it;
 		if( str.length() < 4 )
 			continue;
 		
@@ -134,7 +136,11 @@ std::istream &getln( std::istream & in, std::string & out )
 }
 
 std::string spaces( std::string src ) {
-	src.erase( std::unique(src.begin(), src.end(),[](char a, char b){ return a == ' ' && b == ' '; } ), src.end() );
+//	src.erase( std::unique(src.begin(), src.end(),[](char a, char b){ return a == ' ' && b == ' '; } ), src.end() );
+	for( int j=0; j<src.length(); j++ ) {
+		if( src[j] == ' ' && src[j+1] == ' ' )
+			src.erase(j,1);
+	}
 	return src;
 }
 
