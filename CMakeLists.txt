@@ -10,7 +10,11 @@ else()
 	message( FATAL_ERROR "c++11 compatible compiler not found!" )
 endif()
 
-# check libnetfilter
+# check libnetfilter (test)
+#find_library(
+# end check libnetfilter (test)
+
+# check libnetfilter headers
 INCLUDE(CheckIncludeFiles)
 CHECK_INCLUDE_FILES(libnetfilter_queue/libnetfilter_queue.h HAVE_NFQUEUE_H)
 if(NOT HAVE_NFQUEUE_H)
@@ -20,9 +24,6 @@ endif()
 find_library(NFQUEUE_LIB netfilter_queue $ENV{NFQUEUE_LIB_PATH})
 
 set(SOURCE_EXE nfq.cpp)
-
-#set(SOURCE_LIB sender.cpp parser.cpp)
-#add_library(sender STATIC ${SOURCE_LIB})
 
 set(NFQ_SOURCES "nfq.cpp" "config.cpp" "sender.cpp" "parser.cpp")
 add_executable(nfq_filter ${NFQ_SOURCES})
