@@ -19,14 +19,13 @@
 #include <unordered_map>
 #include <mutex>
 #include <pthread.h>
-#include <boost/regex.hpp>
-#include <boost/program_options.hpp>
 #include <mutex>
 #include <time.h>
 #include <sys/stat.h>
 #include <stdarg.h>
 #include <libnetfilter_queue/libnetfilter_queue.h>
 #include "parser.h"
+#include "config.h"
 
 #define NF_IP_PRE_ROUTING   0
 #define NF_IP_LOCAL_IN 1
@@ -46,7 +45,6 @@
 #define PROG_NAME "nfq_filter"
 
 using namespace std;
-namespace po = boost::program_options;
 
 typedef struct {
 	unsigned long size,resident,share,text,lib,data,dt;
@@ -270,35 +268,26 @@ int main( int argc, char * argv[] )
 
 void read_config( std::string file )
 {
-	po::options_description config;
-	po::variables_map vm;
+	Config *cfg = new Config ( file );
 	
-	std::ifstream cfile(file.c_str());
-	if( !cfile ) {
-		printf("Can't read config: '%s'\n", file.c_str() );
-		exit( -1 );
-	}
-	config.add_options()
-		("queue", po::value<unsigned short int>(&queuenum)->default_value(0), "Queue number")
-		("logfile", po::value<std::string>(&logfilename)->default_value(logfilename.c_str()), "Log filename")
-		("debug", po::value<int>(&debug)->default_value(debug), "Debugging output")
-		("domainlist", po::value<std::string>(&domains_file)->default_value("/etc/nfq/domains"), "Domain list file")
-		("urllist", po::value<std::string>(&urls_file)->default_value("/etc/nfq/urls"), "Url list file")
-		("redirect_url", po::value<std::string>(&redirect_url)->default_value("http://google.com"), "URL for redirects")
-		("debug_from_ip", po::value<std::string>(&debug_from_ip)->default_value(""), "Single IP-Address debug")
-		("debug_ip_file", po::value<std::string>(&debug_ip_file)->default_value(""), "Debug single IP to file")
-		("pidfile", po::value<std::string>(&pidfile)->default_value(""), "pid-file descriptor");
-	
-	vm = po::variables_map();
-	po::store( po::parse_config_file( cfile, config ), vm );
-	cfile.close();
-	po::notify(vm);
-	
-
-	
-	if( debug < 0 || debug > 4 ) {
+	if( !cfg->getParam( "queue", queuenum ) )
+		queuenum = 0;
+	if( !cfg->getParam("logfile", logfilename) )
+		logfilename = "/tmp/nfq_filter.log";
+	if( !cfg->getParam("pidfile", pidfile) )
+		pidfile = "";
+	if( !cfg->getParam("debug", debug) )
 		debug = 1;
-	}
+	if( !cfg->getParam("domainlist", domains_file ) )
+		domains_file = "";
+	if( !cfg->getParam("urllist", urls_file) )
+		urls_file = "";
+	if( !cfg->getParam("redirect_url", redirect_url) )
+		redirect_url = "http://www.google.com";
+	if( !cfg->getParam("debug_from_ip", debug_from_ip) )
+		debug_from_ip = "";
+	if( !cfg->getParam("debug_ip_file", debug_ip_file) )
+		debug_ip_file = "";
 	
 	return;
 }
@@ -386,7 +375,7 @@ void *tread_conf_function( void *)
 	while( 1 ) {
 //		sleep(1);
 		sleep(1800);	// 30 mins.
-		writelog("%s", " - Re-reading domains and urls files.");
+		writelog("%s", " - Re-reading domains and urls files...\n");
 		Mutex.lock();
 			urls.clear();
 			domains.clear();

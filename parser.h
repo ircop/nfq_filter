@@ -4,7 +4,6 @@
 #include <sstream>
 #include <algorithm>
 #include <vector>
-//#include <boost/regex.hpp>
 
 typedef struct {
 	std::string host, method, full_url;
