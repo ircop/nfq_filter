@@ -49,6 +49,8 @@ Open file nfq.cpp and replace two lines:
 Donations are welcome ^)
 
 Ya.money: 41001647090287
+
 WMR: R963745229668
+
 WMZ: Z774839394176
 
