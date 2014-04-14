@@ -556,6 +556,7 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 				nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
 				return(0);
 			}  else {
+//					fprintf( f_debug_ip, "%s", " - PARSED HTTP - \n");
 				string host = r.host;
 				string url = r.full_url;
 				string method = r.method;

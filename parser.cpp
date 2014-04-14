@@ -10,13 +10,17 @@ bool parse_http( std::string pdata, http_request *req )
 	int http=1;
 	int posf, pos, tam;
 	
+	/*
 	// Find headers part ( before '\r\n' ):
 	if( pos = pdata.find("\r\n\r\n",0) == std::string::npos )
 		return false;						// packet has no http header part
-	data = pdata.substr(0, pos+1);
+	*/
+	//data = pdata.substr(0, pos+1);
+	data = pdata;
 	std::vector<std::string> strings = explode( "\r\n", pdata );
 	if( strings.size() < 2 )
 		return false;		// too low strings
+	
 	
 	// First string must me GET/POST/HEAD
 	std::string line, tmp;
