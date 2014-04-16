@@ -15,6 +15,8 @@ endif()
 # end check libnetfilter (test)
 
 # check libnetfilter headers
+INCLUDE_DIRECTORIES(/usr/include/libnetfilter_queue /usr/include)
+
 INCLUDE(CheckIncludeFiles)
 CHECK_INCLUDE_FILES(libnetfilter_queue/libnetfilter_queue.h HAVE_NFQUEUE_H)
 if(NOT HAVE_NFQUEUE_H)
