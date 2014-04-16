@@ -15,10 +15,8 @@ endif()
 # end check libnetfilter (test)
 
 # check libnetfilter headers
-INCLUDE_DIRECTORIES(/usr/include/libnetfilter_queue /usr/include)
-
 INCLUDE(CheckIncludeFiles)
-CHECK_INCLUDE_FILES(libnetfilter_queue/libnetfilter_queue.h HAVE_NFQUEUE_H)
+CHECK_INCLUDE_FILES("libnetfilter_queue/libnetfilter_queue.h" HAVE_NFQUEUE_H)
 if(NOT HAVE_NFQUEUE_H)
 	message( FATAL_ERROR "libnetfilter_queue.h not found!" )
 endif()
@@ -30,4 +28,4 @@ set(SOURCE_EXE nfq.cpp)
 set(NFQ_SOURCES "nfq.cpp" "config.cpp" "sender.cpp" "parser.cpp")
 add_executable(nfq_filter ${NFQ_SOURCES})
 
-target_link_libraries(nfq_filter -lnetfilter_queue -lpthread -lboost_program_options)
+target_link_libraries(nfq_filter -lnetfilter_queue -lpthread -lnfnetlink)
