@@ -97,3 +97,51 @@ bool Config::getParam( std::string name, int &param )
 		return false;
 	}
 }
+
+bool Config::getQueues(int &from, int &to)
+{
+	std::string mq;
+	if( this->getParam( "multiqueues", mq ) ) {
+		// multi-queues
+		mq.erase(remove_if(mq.begin(), mq.end(), isspace), mq.end());		// trim
+		std::size_t i = mq.find_last_of(':');
+		if( i == std::string::npos )
+			return false;
+		if( i+1 == mq.length() )
+			return false;
+		
+		// start
+		std::string f = mq.substr(0, i);
+		// end
+		std::string t = mq.substr( i+1, mq.length() );
+		
+		char *temp;
+		int _val = strtol( f.c_str(), &temp, 0 );
+		if( *temp != '\0' ) {
+			printf("Config: Multiqueue starting queue num is not numeric: %s\n", f.c_str() );
+			exit(-1);
+		}
+		from = _val;
+		_val = strtol( t.c_str(), &temp, 0 );
+		if( *temp != '\0' ) {
+			printf("Config: Multiqueue ending queue num is not numeric: %s\n", t.c_str() );
+			exit(-1);
+		}
+		to = _val;
+		
+		if( from < 0 || to < 0 ) {
+			printf("Config: Queue num can't be < 0 (%s)\n", mq.c_str() );
+			exit(-1);
+		}
+		
+		if( to <= from ) {
+			printf("Config: Ending queue must be > starting queue num (%s)\n", mq.c_str() );
+			exit(-1);
+		}
+		
+		return true;
+	} else {
+		return false;
+	}
+}
+

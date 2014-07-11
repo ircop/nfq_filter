@@ -17,9 +17,12 @@ bool parse_http( std::string pdata, http_request *req )
 	*/
 	//data = pdata.substr(0, pos+1);
 	data = pdata;
+//	std::vector<std::string> strings = explode( "\r\n", pdata );
 	std::vector<std::string> strings = explode( "\r\n", pdata );
-	if( strings.size() < 2 )
+	if( strings.size() < 2 ) {
+//		printf("\nstrings.size()\n");
 		return false;		// too low strings
+	}
 	
 	
 	// First string must me GET/POST/HEAD
@@ -28,31 +31,48 @@ bool parse_http( std::string pdata, http_request *req )
 	
 	posf = line.find(" ", 0);	// first value before whitespace
 	tmp = line.substr(0, posf);
+//	printf("\n\nTRYING GET/POST/HEAD\n");
 	if( tmp == "GET" || tmp == "POST" || tmp == "HEAD" ) {
 		// valid request beginning
 		method = tmp;
 		
 		// find path
 		pos = line.find(" ", posf+1);
-		if( pos == std::string::npos )
+//		printf("\n\nTRYING first match\n");
+		if( pos == std::string::npos ) {
+//			printf("\npos == std::string::npos\n");
 			return false;
+		}
 		tmp = line.substr( posf+1, pos-(posf+1) );
-		if( tmp == "" ) return false;
+//		printf("\n\nTRYING 2ND MATCH\n");
+		if( tmp == "" ) {
+//			printf("\ntmp==''\n");
+			return false;
+		}
 		path = tmp;
 		
 		
 		// http ver.:
 		posf = line.find("\r", pos);
-		if( pos == std::string::npos )
+//		printf("\n\nTRYING http ver\n");
+		if( pos == std::string::npos ) {
+//			printf("\npos == std::string::npos (2)\n");
 			return false;
+		}
 		tmp = line.substr(pos+1, posf);
+//		printf("\n\ntrying http/1.1\n");
 		if( tmp == "HTTP/1.1" )
 			http = 1;
 		else if ( tmp == "HTTP/1.0" )
 			http = 0;
-		else return false;
-	} else
+		else {
+//			printf("\nhttp1.0/0.0 failed\n");
+			return false;
+		}
+	} else {
+//		printf("\n NOT get/post/head\n");
 		return false;
+	}
 	
 //	printf("%s","Got method and http version.\n");
 	
@@ -62,7 +82,7 @@ bool parse_http( std::string pdata, http_request *req )
 		std::string str = *it;
 		if( str.length() < 4 )
 			continue;
-		
+//		printf("STRING: '%s'\n", str.c_str() );
 		posf = str.find(" ", 0);
 		if( posf != std::string::npos ) {
 			// string with spaces
@@ -83,8 +103,10 @@ bool parse_http( std::string pdata, http_request *req )
 	
 	// if http/1.1, path must begin with /
 	if( http == 1 ) {
-		if( path.substr(0,1) != "/" )
+		if( path.substr(0,1) != "/" ) {
+//			printf("\nvrong http 1.1 path\n");
 			return false;
+		}
 		full_url = host + path;
 	}
 	
@@ -109,8 +131,10 @@ bool parse_http( std::string pdata, http_request *req )
 		}
 	}
 	
-	if( host == "" || path == "" || method == "" )
+	if( host == "" || path == "" || method == "" ) {
+//		printf("\nno host/path/method\nhost: '%s' path: '%s' method: '%s'\n", host.c_str(), path.c_str(), method.c_str() );
 		return false;
+	}
 	else
 	{
 		req->host = host;
@@ -160,7 +184,7 @@ std::vector<std::string> explode( std::string delim, std::string source )
 		source.erase(0, pos + delim.length() );
 		token = spaces( token );
 		arr.push_back(token);
-		if( i > 4 )
+		if( i > 7 )
 			break;		// take only first 4 strings
 		i++;
 	}

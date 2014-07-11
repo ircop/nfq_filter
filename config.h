@@ -15,6 +15,7 @@ class Config
 		bool getParam( std::string name, short unsigned int &param );
 		bool getParam( std::string name, int &param );
 		bool getParam( std::string name, std::string &param );
+		bool getQueues(int &from, int &to);
 	private:
 		std::string filename;
 		std::unordered_map<std::string, std::string> params;

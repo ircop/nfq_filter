@@ -19,7 +19,6 @@
 #include <unordered_map>
 #include <mutex>
 #include <pthread.h>
-#include <mutex>
 #include <time.h>
 #include <sys/stat.h>
 #include <stdarg.h>
@@ -61,6 +60,7 @@ void *tcap_packet_function( void *threadarh );
 void *twrite_log_function( void *);
 void *tread_conf_function( void *);
 void writelog( const char *fmt, ... );
+void writedebug( bool stamp, const char *fmt, ... );
 short int netlink_loop(unsigned short int queuenum);
 static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data);
 char *get_src_ip_str( char *payload );
@@ -84,15 +84,25 @@ int debug_ip = 0;
 std::unordered_map<std::string, int> domains;
 std::unordered_map<unsigned long, std::string> urls;
 std::mutex Mutex;
+std::mutex MutexHandle;
+std::mutex log_main;
+std::mutex log_ip;
+std::mutex log_debug;
+
 long int filtered, captured;
 char tmp[4096];
 CSender *Sender;
 FILE *f_log;
+FILE *f_debug;
 FILE *f_debug_ip;
 int daemonized;
 
 int debug = 1;
 unsigned short int queuenum;
+int buffer_size;
+int queue_start;
+int queue_end;
+bool multiqueued;
 
 int main( int argc, char * argv[] )
 {
@@ -158,9 +168,14 @@ int main( int argc, char * argv[] )
 	}
 	
 	read_config( config_file );
-	sprintf( tmp, "\n--------------------------\nStarting program.\n\nQueue:\t\t%i\nLog file:\t%s\nDebug:\t\t%i\n", queuenum, logfilename.c_str(), debug ) ;
+	sprintf( tmp, "\n--------------------------\nStarting program.\n\nBuffer size:\t%i\nLog file:\t%s\nDebug:\t\t%i\n", buffer_size, logfilename.c_str(), debug ) ;
+	if( multiqueued )
+		sprintf( tmp, "%sMultiqueued:\ttrue\nQueues:\t\t%i-%i\n", tmp, queue_start, queue_end );
+	else
+		sprintf( tmp, "%sMultiqueued:\tfalse\nQueue:\t\t%i\n", tmp, queuenum );
 	
 	f_log = fopen(logfilename.c_str(), "a");
+	f_debug = fopen("/tmp/nfq_debug.txt", "a");
 	if( f_log == NULL ) {
 		printf("%s\n", "Can't open logfile!\n");
 		exit(-1);
@@ -227,14 +242,43 @@ int main( int argc, char * argv[] )
 	
 	Sender = new CSender( debug, redirect_url );
 	
-	// Starting threads
-	pthread_t tcap_packet, twrite_log, tread_conf;
-	// Main thread
-	ret = pthread_create(&tcap_packet, NULL, tcap_packet_function, (void *) &queuenum);
-	if( ret ) {
-		printf("- ERROR(1): return code from pthread_create: %d\n", ret);
+	//////////////////////////////////////////
+	//		without threads		//
+	//////////////////////////////////////////
+//	netlink_loop( (unsigned short int) queuenum );
+//	exit(-1);
+	
+	pthread_t twrite_log, tread_conf;
+	
+	if( !multiqueued ) {
+		// Starting threads
+		pthread_t tcap_packet;
+		// Main thread
+		ret = pthread_create(&tcap_packet, NULL, tcap_packet_function, (void *) &queuenum);
+		if( ret ) {
+			printf("- ERROR(1): return code from pthread_create: %d\n", ret);
+			exit(-1);
+		}
+	} else {
+		/*
+		int thread_num = queue_end - queue_start + 1;
+		//pthread_t * workers = malloc( sizeof(pthread_t) * thread_num);
+		pthread_t workers[thread_num];
+		
+		for( unsigned short int qnum = queue_start; qnum <= queue_end; qnum++ ) {
+			printf("QNUM: %i\n", qnum);
+			ret = pthread_create( &workers[qnum], NULL, tcap_packet_function, (void *) &qnum );
+			if( ret != 0 ) {
+				printf("- Error %d during pthread_create!\n", ret);
+				exit(-1);
+			}
+		}
+		*/
+		printf("%s\n", "Multi-queueing not works yet.");
 		exit(-1);
 	}
+	
+	
 	// Log statistics thread
 	ret = pthread_create(&twrite_log, NULL, twrite_log_function, (void *)NULL);
 	if( ret ) {
@@ -249,7 +293,6 @@ int main( int argc, char * argv[] )
 	}
 	
 	
-	
 	statm_t mem;
 	char buf[128];
 	while(1){
@@ -259,11 +302,13 @@ int main( int argc, char * argv[] )
 		writelog( "Parent memory usage:\t%ld\n", mem.size );
 	}
 	
-	fclose( f_log );
-	if( debug_ip == 1 )
-		fclose( f_debug_ip );
+//	fclose( f_log );
+//	fclose( f_debug );
+//	if( debug_ip == 1 )
+//		fclose( f_debug_ip );
 	
 	pthread_exit(NULL);
+
 }
 
 void read_config( std::string file )
@@ -288,7 +333,16 @@ void read_config( std::string file )
 		debug_from_ip = "";
 	if( !cfg->getParam("debug_ip_file", debug_ip_file) )
 		debug_ip_file = "";
+	if( !cfg->getParam("buffer_size", buffer_size) )
+		buffer_size = 8388608;
 	
+	if( cfg->getQueues( queue_start, queue_end ) )
+		multiqueued = true;
+	else {
+		queue_start = 0;
+		queue_end = 0;
+		multiqueued = false;
+	}
 	return;
 }
 
@@ -303,6 +357,8 @@ void read_domains()
 		fprintf(stderr, "\nCan not open domains.txt!\n");
 		return;
 	}
+	
+	domains.clear();
 	
 	while( !dfile.eof() ) {
 		getline(dfile, dline);
@@ -325,6 +381,8 @@ void read_urls()
 		fprintf(stderr, "\nCan not open urls.txt!\n");
 		return;
 	}
+	
+	urls.clear();
 	
 	while( !ufile.eof() ) {
 		getline(ufile, uline);
@@ -363,7 +421,9 @@ inline std::string trim( std::string& str )
 
 void *tcap_packet_function( void *threadarg )
 {
-	printf("Thread: sniffing packet...started.\n");
+	unsigned short int qnum = *((int* ) threadarg ) - 1;
+//	printf("Thread: sniffing packet started for queue_num %i\n", *(unsigned short int *) threadarg);
+	printf("Thread: sniffing packet started for queue_num %i\n", qnum );
 	netlink_loop(*(unsigned short int *) threadarg);
 	pthread_exit(NULL);
 }
@@ -373,15 +433,14 @@ void *tread_conf_function( void *)
 	printf("Thread: read config files...started\n");
 	
 	while( 1 ) {
-//		sleep(1);
 		sleep(1800);	// 30 mins.
 		writelog("%s", " - Re-reading domains and urls files...\n");
 		Mutex.lock();
-			urls.clear();
-			domains.clear();
+		MutexHandle.lock();
 			read_domains();
 			read_urls();
 		Mutex.unlock();
+		MutexHandle.unlock();
 	}
 	pthread_exit(NULL);
 }
@@ -396,9 +455,11 @@ void *twrite_log_function( void *)
 	char buf[128];
 	
 	while(1){
+//		writedebug(true, "%s", " twrite_log_function... ");
 		sleep(120);
 		read_mem(mem);
-		writelog( "\n--- stats ---\nFiltered: %lu\nCaptured: %lu\nMemory: %ld\n\n", filtered, captured, mem.size);
+		writelog( "\n--- stats ---\nFiltered: %lu\nCaptured: %lu\nMemory: %ld\nDomains size: %i\nURLs size: %i\n", filtered, captured, mem.size, domains.size(), urls.size() );
+//		writedebug(false, "%s", "done! sleep... ");
 	}
 	pthread_exit(NULL);
 }
@@ -414,12 +475,51 @@ void writelog( const char *fmt, ... ) {
         char b[80];
         tstruct = *localtime(&now);
         strftime(b, sizeof(b), "%d.%m.%Y %X", &tstruct );
+	
+	
+	// mutex for main log
+	log_main.lock();
+	
+	fprintf( f_log, "%s:\t", b );         // datetime
+	
+	va_list arg;
+	va_start( arg, fmt );
+		vfprintf( f_log, fmt, arg );
+	va_end(arg);
+	
+	
+	if( daemonized == 0 ) {
+		va_start( arg, fmt );
+		printf( "%s:", b );
+		vprintf( fmt, arg );
+		va_end(arg);
+	}
+	fflush( f_log );
+	
+	// free mutex
+	log_main.unlock();
+}
 
-        fprintf( f_log, "%s:\t", b );         // datetime
+void writedebug( bool stamp, const char *fmt, ... ) {
+        if( f_debug == NULL ) {
+                printf("Debug file is not opened! Exiting.\n");
+                exit(-1);
+        }
+
+        time_t now = time(0);
+        struct tm tstruct;
+        char b[80];
+        tstruct = *localtime(&now);
+        strftime(b, sizeof(b), "%d.%m.%Y %X", &tstruct );
+	
+	log_debug.lock();
+	
+	if( stamp )
+		fprintf( f_debug, "\n%s:\t", b );         // datetime
 
         va_list arg;
         va_start( arg, fmt );
-		vfprintf( f_log, fmt, arg );
+		vfprintf( f_debug, fmt, arg );
         va_end(arg);
 
         if( daemonized == 0 ) {
@@ -427,9 +527,11 @@ void writelog( const char *fmt, ... ) {
 		printf( "%s:", b );
 		vprintf( fmt, arg );
 		va_end(arg);
-        }
-
-        fflush( f_log );
+	}
+	
+	fflush( f_debug );
+	
+	log_debug.unlock();
 }
 
 short int netlink_loop(unsigned short int queuenum)
@@ -467,6 +569,8 @@ short int netlink_loop(unsigned short int queuenum)
 		exit(-1);
 	}
 	
+	// set buffer size
+	
 	//set the amount of data to copy to userspace for each packet in queue
 	if( nfq_set_mode(qh, NFQNL_COPY_PACKET, 0xffff) < 0 ) {
 		printf("Can't set packet copy mode ( nfq_set_mode() )\n");
@@ -479,11 +583,36 @@ short int netlink_loop(unsigned short int queuenum)
 	// returns file descriptor for the netlink connection associated with the given queue connection handle.
 	// Can be used for receiving the queue packets for processing.
 	fd = nfnl_fd(nh);
-	while( ( rv = recv(fd, buf, sizeof(buf), 0) ) && rv >= 0 ) {
-		
-		// triggers an associated callback function for the given packet received from the queue.
-		// Packets can be read from the queue using nfq_fd() and recv().
-		nfq_handle_packet(h, buf, rv);
+//	while( ( rv = recv(fd, buf, sizeof(buf), 0) ) && rv >= 0 ) {
+	for( ;; ) {
+		if( (rv = recv(fd, buf, sizeof(buf), 0) ) >= 0 ) {
+			// triggers an associated callback function for the given packet received from the queue.
+			// Packets can be read from the queue using nfq_fd() and recv().
+			MutexHandle.lock();
+			nfq_handle_packet(h, buf, rv);
+			MutexHandle.unlock();
+			continue;
+		} else if( rv == -1 ) {
+			// some error
+			switch( errno ) {
+				case EAGAIN:
+					perror("ERROR: EAGAIN"); writelog("%s", "ERROR: EAGAIN"); break;
+				case EBADF:
+					perror("ERROR: EBADF: Bad file descriptor!"); writelog("ERROR: EBADF: Bad file descriptor! %s\n", strerror(errno) ); break;
+				case ECONNRESET:
+					perror("ERROR: ECONNRESET: NFQ Socket connection reset!"); writelog("ERROR: ECONNRESET: NFQ Socket connection reset! %s\n", strerror(errno) ); break;
+				case ETIMEDOUT:
+					perror("ERROR: ETIMEDOUT: NFQ Socket connection timeout!"); writelog("ERROR: ETIMEDOUT: NFQ Socket connection timeout! %s\n", strerror(errno) ); break;
+				case ENOBUFS:
+					perror("ERROR: ENOBUFS: app is not fast enough. Increase socket buffer size by nfnl_rcvbufsiz(): ");
+					writelog("ERROR: ENOBUFS: App is not fast enough, increase socket buffer size by nfnl_rcvbufsiz(): %s\n", strerror(errno) );
+					break;
+				default:
+					perror("Unknown error code!");
+					writelog("Unknown error code: %d\n", errno);
+					break;
+			}
+		}
 	}
 	
 	// unbind before exit
@@ -498,9 +627,12 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 	struct nfqnl_msg_packet_hdr *ph;
 	ph = nfq_get_msg_packet_hdr(nfa);
 	
+//	writedebug(true, "%s", "Next queue: ");
+	
 	// Process packet only if it's prerouting:
 	if( ph && ph->hook == NF_IP_PRE_ROUTING ) {
 		captured++;
+//		writedebug(false, "%s", "captured++; ");
 		// processing packet
 		int id=0;
 		int size=0;
@@ -508,24 +640,36 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 		
 		unsigned char *data;
 		int len=0;
+//		writedebug(false, "%s", " | 1 | ");
 		
 		id = ntohl( ph->packet_id );
 		size = nfq_get_payload(nfa, (unsigned char **)&full_packet);
 		len = nfq_get_payload(nfa, &data);
 		int id_protocol = full_packet[9];	// identify ip protocol
 		
+//		writedebug(false, "%s", " | 2 | ");
+		
 		int iphlen = iphdr(data)->ihl*4;
 		int tcphlen = tcphdr(data+iphlen)->doff*4;
 		int hlen = iphlen + tcphlen;
 		int ofs = iphlen + sizeof(struct tcphdr);
 		
+//		writedebug(false, "%s", " | 3 | ");
+		
 		if( len == hlen ) {
+//			writedebug(false, "%s", " | 3-1 | ");
+			Mutex.lock();
 			nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
+			Mutex.unlock();
+//			writedebug(false, "%s", " | 3-2 | ");
 			return(0);
 		}
 		
+//		writedebug(false, "%s", " | 4 | ");
+		
 		// Process only TCP proto:
 		if( id_protocol == IPPROTO_TCP ) {
+//			writedebug(false, "%s", "IPPROTO_TCP; ");
 			char src_ip[32], dst_ip[32];
 			strcpy( src_ip, get_src_ip_str(full_packet) );
 			strcpy( dst_ip, get_dst_ip_str(full_packet) );
@@ -548,12 +692,17 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 			std::string res = result;
 			
 			http_request r;
+//			writedebug(false, "%s", "parse_http(); ");
 			if( !parse_http( res, &r ) ) {
 				if( debug_ip == 1 && debug_from_ip == src_ip ) {
 					fprintf( f_debug_ip, " - Packet captured: %s:%d -> %s:%d :: Header: %s", src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
 					fprintf( f_debug_ip, "%s\nFull packet:\n%s", "parse_http() failed.", res.c_str() );
 				}
+//				writedebug(false, "%s", "!parse_http(); ");
+				Mutex.lock();
 				nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
+				Mutex.unlock();
+//				writedebug(false, "%s", "set_verdict; return; ");
 				return(0);
 			}  else {
 //					fprintf( f_debug_ip, "%s", " - PARSED HTTP - \n");
@@ -562,10 +711,12 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 				string method = r.method;
 				string full_url = r.full_url;
 				
+//				writedebug(false, "%s", "Mutex.lock(); ");
 				Mutex.lock();
 				// Check in domain list
 				if( domains.find( host ) != domains.end() ) {
 					Mutex.unlock();
+//					writedebug(false, "%s", "domain found; ");
 					if( debug > 0 )
 						writelog(" - Packet filtered by DOMAIN: %s (%s) :: %s:%d -> %s:%d :: Header: %s", host.c_str(), full_url.c_str(), src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
 					if( debug == 2 || debug == 4 )
@@ -581,12 +732,16 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 						 /*acknum*/ tcph->ack_seq, /*seqnum*/ tcph->seq,
 						 /* flag psh */ (tcph->psh ? 1 : 0 ) );
 					filtered++;
+					Mutex.lock();
 					nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
+					Mutex.unlock();
 					return(0);
 				} else {
+//					writedebug(false, "%s", "domain !found; ");
 						// Get hash of this url
 						unsigned long url_hash = djb2( (unsigned char*)full_url.c_str() );
 						if( urls.find( url_hash ) != urls.end() ) {
+//							writedebug(false, "%s", "url found; ");
 							Mutex.unlock();
 							if( debug > 0 )
 								writelog(" - Packet filtered by URL: %s :: %s:%d -> %s:%d :: Header: %s", full_url.c_str(), src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr );
@@ -602,10 +757,13 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 									src_ip, dst_ip, tcph->ack_seq, tcph->seq,
 									(tcph->psh ? 1 : 0 ) );
 							filtered++;
+							Mutex.lock();
 							nfq_set_verdict( qh, id, NF_DROP, 0, NULL);
+							Mutex.unlock();
 							return(0);
 						}
 					Mutex.unlock();
+//					writedebug(false, "%s", "Mutex.unlock(); ");
 				}
 				
 				if( debug_ip == 1 && debug_from_ip == src_ip ) {
@@ -617,17 +775,22 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 					writelog("Packet NOT filtered: %s:%d -> %s:%d,\tHeader: %s\nHost: %s :: URL: %s\n", src_ip, get_tcp_src_port(full_packet), dst_ip, get_tcp_dst_port(full_packet), hdr, host.c_str(), full_url.c_str() );
 				if( debug == 4 )
 					writelog("Full packet:\n%s", res.c_str() );
+//				writedebug(false, "%s", "Packet NOT filtered. ");
 			}
 		}
+//		writedebug(false, "%s", "Packet released. set_verdict&return; \n");
 		// let the packet continue. NF_ACCEPT will pass the packet.
+		Mutex.lock();
 		nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
+		Mutex.unlock();
 		return(0);
 	} else {
 		printf("NFQUEUE: can't get msg packet header.\n");
 		return(1);	// 0=ok, 0+ = soft err, 0- = hard err
 	}
-	
+	Mutex.lock();
 	nfq_set_verdict(qh, ntohl( ph->packet_id ), NF_ACCEPT, 0, NULL);
+	Mutex.unlock();
 	return(0);
 }
 
@@ -680,6 +843,7 @@ unsigned long djb2( unsigned char *str )
 
 void read_mem(statm_t &result )
 {
+/*
 	unsigned long dummy;
 	const char* statm_path = "/proc/self/statm";
 	
@@ -695,8 +859,9 @@ void read_mem(statm_t &result )
 		perror(statm_path);
 		return;
 	}
-//	writelog("\n---meminfo---\n%ld %ld %ld", result.size, result.share, result.data);
+	writelog("\n---meminfo---\n%ld %ld %ld", result.size, result.share, result.data);
 	
 	fclose(f);
+*/
 }
 
