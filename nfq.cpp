@@ -605,11 +605,11 @@ short int netlink_loop(unsigned short int queuenum)
 					perror("ERROR: ETIMEDOUT: NFQ Socket connection timeout!"); writelog("ERROR: ETIMEDOUT: NFQ Socket connection timeout! %s\n", strerror(errno) ); break;
 				case ENOBUFS:
 					perror("ERROR: ENOBUFS: app is not fast enough. Increase socket buffer size by nfnl_rcvbufsiz(): ");
-					writelog("ERROR: ENOBUFS: App is not fast enough, increase socket buffer size by nfnl_rcvbufsiz(): %s\n", strerror(errno) );
+					writelog("%s\n", "ERROR: ENOBUFS: App is not fast enough, increase socket buffer size by nfnl_rcvbufsiz()\n" );
 					break;
 				default:
 					perror("Unknown error code!");
-					writelog("Unknown error code: %d\n", errno);
+					writelog("Unknown error code: %d: %s\n", errno, strerror(errno) );
 					break;
 			}
 		}
