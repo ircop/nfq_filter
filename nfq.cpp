@@ -631,7 +631,7 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 	
 	// Process packet only if it's prerouting:
 	if( ph && ph->hook == NF_IP_PRE_ROUTING ) {
-		captured++;
+//		captured++;
 //		writedebug(false, "%s", "captured++; ");
 		// processing packet
 		int id=0;
@@ -731,7 +731,7 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 						 /*user ip*/src_ip, dst_ip,
 						 /*acknum*/ tcph->ack_seq, /*seqnum*/ tcph->seq,
 						 /* flag psh */ (tcph->psh ? 1 : 0 ) );
-					filtered++;
+//					filtered++;
 					Mutex.lock();
 					nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
 					Mutex.unlock();
@@ -756,7 +756,7 @@ static int nfqueue_cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nf
 							Sender->Redirect( get_tcp_src_port(full_packet), get_tcp_dst_port(full_packet),
 									src_ip, dst_ip, tcph->ack_seq, tcph->seq,
 									(tcph->psh ? 1 : 0 ) );
-							filtered++;
+//							filtered++;
 							Mutex.lock();
 							nfq_set_verdict( qh, id, NF_DROP, 0, NULL);
 							Mutex.unlock();

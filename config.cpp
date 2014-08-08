@@ -93,6 +93,7 @@ bool Config::getParam( std::string name, int &param )
 			exit(-1);
 		}
 		param = _val;
+		return true;
 	} else {
 		return false;
 	}
