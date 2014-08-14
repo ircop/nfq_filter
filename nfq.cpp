@@ -458,7 +458,7 @@ void *twrite_log_function( void *)
 //		writedebug(true, "%s", " twrite_log_function... ");
 		sleep(120);
 		read_mem(mem);
-		writelog( "\n--- stats ---\nFiltered: %lu\nCaptured: %lu\nMemory: %ld\nDomains size: %i\nURLs size: %i\n", filtered, captured, mem.size, domains.size(), urls.size() );
+//		writelog( "\n--- stats ---\nFiltered: %lu\nCaptured: %lu\nMemory: %ld\nDomains size: %i\nURLs size: %i\n", filtered, captured, mem.size, domains.size(), urls.size() );
 //		writedebug(false, "%s", "done! sleep... ");
 	}
 	pthread_exit(NULL);
