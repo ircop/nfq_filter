@@ -36,7 +36,7 @@ Open file nfq.cpp and replace two lines:
 - Set iptables rule:
 
 
-        iptables -A PREROUTING -s x.x.x.x/y -p tcp -m tcp --dport 80 -j NFQUEUE --queue-num 0 --queue-bypass
+        iptables -t mangle -A PREROUTING -s x.x.x.x/y -p tcp -m tcp --dport 80 -j NFQUEUE --queue-num 0 --queue-bypass
 
     where x.x.x.x/y is source network (users) for http-requests filtering
 
