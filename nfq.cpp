@@ -435,8 +435,8 @@ void *tread_conf_function( void *)
 	while( 1 ) {
 		sleep(1800);	// 30 mins.
 		writelog("%s", " - Re-reading domains and urls files...\n");
-		Mutex.lock();
 		MutexHandle.lock();
+		Mutex.lock();
 			read_domains();
 			read_urls();
 		Mutex.unlock();
