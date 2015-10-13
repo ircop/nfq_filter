@@ -132,6 +132,8 @@ void CSender::sendPacket(char *ip_from, char *ip_to, int port_from, int port_to,
 //		printf("Packet sent to %s:%i. Length: %d\n", ip_to, port_to, iph->tot_len);
 	}
 	
+	free(pseudogram);
+	
 	return;
 }
 
