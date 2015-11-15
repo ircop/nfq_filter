@@ -16,6 +16,12 @@ endif()
 
 # check libnetfilter headers
 INCLUDE(CheckIncludeFiles)
+
+CHECK_INCLUDE_FILES(stdint.h HAVE_STDINT_H)
+if( HAVE_STDINT_H )
+    set(CMAKE_REQUIRED_FLAGS "-include stdint.h")
+ENDIF(HAVE_STDINT_H)
+
 CHECK_INCLUDE_FILES("libnetfilter_queue/libnetfilter_queue.h" HAVE_NFQUEUE_H)
 if(NOT HAVE_NFQUEUE_H)
 	message( FATAL_ERROR "libnetfilter_queue.h not found!" )
